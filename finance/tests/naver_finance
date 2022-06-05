@@ -1,0 +1,145 @@
+from http.client import CONTINUE
+import pandas as pd
+import requests
+import datetime
+import pymysql
+
+
+# 네이버("https://finance.naver.com/item/main.nhn?code=005930)에서 얻은 년간, 분기실적을 naver_finance 에 업로드
+#년간 실적은 3개년 + 예상실적
+#분기는 5개 분기 + 분기 예상실적
+
+connPy = pymysql.connect(host="127.0.0.1", user="root", passwd="JRLEE", db="sstock")
+cur = connPy.cursor()
+cur.execute("use sstock")
+
+sql="SELECT DISTINCT 종목명, 종목코드 FROM stock_code_list"
+df_stock_code =pd.read_sql_query(sql, connPy)
+df_stock_code=df_stock_code.fillna(0)
+
+for ii in range(len(df_stock_code)):
+    code = '005930'
+    #URL = f"https://finance.naver.com/item/main.nhn?code={str(df_stock_code.loc[ii, '종목코드'])}"
+    URL = f"https://finance.naver.com/item/main.nhn?code={df_stock_code.iat[ii,1]}"
+    r = requests.get(URL)
+    try:
+        df = pd.read_html(r.text)[3]
+        df.set_index(df.columns[0],inplace=True)
+        df.index.rename('주요재무정보', inplace=True)
+        df.columns = df.columns.droplevel(2)
+        df_annual = pd.DataFrame(df).xs('최근 연간 실적',axis=1)
+
+        df_annualT = df_annual.T
+
+        df_annualT.reset_index(drop=False, inplace=True)
+        df_annualT=df_annualT.fillna(0)
+
+        #df_annualT.to_excel('C:/DataDisk/naver_finance.xlsx')
+
+        for idx in range(len(df_annualT)):
+            sql = "INSERT IGNORE INTO naver_finance (종목명, 종목코드, 시기 ,년분기, 매출액, 영업이익, 당기순이익, 영업이익률, 순이익률, ROE, 부채비율, 당좌비율,"
+            sql += " 유보율, EPS, PER, BPS, PBR, 주당배당금, 시가배당률, 배당성향, update_date)"
+            sql += " values"
+            sql += f" ('{df_stock_code.iat[ii,0]}','{df_stock_code.iat[ii,1]}', %s, '년간', %s, %s, %s, %s, %s, %s, %s, %s,"
+            sql += f" %s, %s, %s, %s, %s, %s, %s, %s, '{datetime.datetime.now().strftime('%Y%m%d')}'"
+            sql += ")"
+
+            try:
+                cur.execute(sql,tuple(df_annualT.values[idx])) 
+                #connPy.commit()
+
+            except Exception as e:    # 모든 예외의 에러 메시지를 출력할 때는 Exception을 사용
+                print('예외가 발생했습니다.', e)
+                continue
+        print(df_stock_code.iat[ii,0]+" 년간 실적 저장")
+
+        df_quater = pd.DataFrame(df).xs('최근 분기 실적',axis=1)
+        df_quaterT = df_quater.T
+
+        df_quaterT.reset_index(drop=False, inplace=True)
+        df_quaterT=df_quaterT.fillna(0)
+
+        #df_annualT.to_excel('C:/DataDisk/naver_finance.xlsx')
+
+        for idx in range(len(df_quaterT)):
+            sql = "INSERT IGNORE INTO naver_finance (종목명, 종목코드, 시기 ,년분기, 매출액, 영업이익, 당기순이익, 영업이익률, 순이익률, ROE, 부채비율, 당좌비율,"
+            sql += " 유보율, EPS, PER, BPS, PBR, 주당배당금, 시가배당률, 배당성향, update_date)"
+            sql += " values"
+            sql += f" ('{df_stock_code.iat[ii,0]}','{df_stock_code.iat[ii,1]}', %s, '분기', %s, %s, %s, %s, %s, %s, %s, %s,"
+            sql += f" %s, %s, %s, %s, %s, %s, %s, %s, '{datetime.datetime.now().strftime('%Y%m%d')}'"
+            sql += ")"
+
+            try:
+                cur.execute(sql,tuple(df_quaterT.values[idx])) 
+                connPy.commit()
+
+            except Exception as e:    # 모든 예외의 에러 메시지를 출력할 때는 Exception을 사용
+                print('예외가 발생했습니다.', e)
+                continue
+        print(df_stock_code.iat[ii,0]+" 년간, 분기 실적 저장")
+
+    except Exception as e:    # 모든 예외의 에러 메시지를 출력할 때는 Exception을 사용
+        print(df_stock_code.iat[ii,0]+" 년간, 분기 실적 저장에 실패하였습니다.")
+        continue
+# print(df_annual)
+# df_annual.transpose()
+# print(df_annual)
+#df_annual.rename(columns=df_annual.iloc[0],inplace=True)
+#df_annual = df_annual.drop(df_annual.index[0])
+
+
+
+
+
+
+
+
+
+    # URL = f"https://finance.naver.com/item/main.nhn?code={str(df_stock_code.loc[ii, '종목코드'])}"
+
+    # nf_resp = requests.get(URL)
+    # #html = nf_resp.text
+
+    # financial_stmt = pd.read_html(nf_resp.text)[3]
+    # if (('주요재무정보', '주요재무정보', '주요재무정보') in financial_stmt)==False:
+    #     #return None
+    #     CONTINUE
+
+    # financial_stmt.set_index(('주요재무정보', '주요재무정보', '주요재무정보'), inplace=True)
+    # financial_stmt.index.rename('주요재무정보', inplace=True)
+    # financial_stmt.columns = financial_stmt.columns.droplevel(2)
+
+    # fs_dict=financial_stmt.to_dict()
+    # #print(financial_stmt)
+    
+
+    # #컬럼명을 다시 명명
+    # financial_stmt.rename(columns = {'ROE(지배주주)':'ROE','EPS(원)':'EPS','PER(배)':'PER','BPS(원)':'BPS','PBR(배)':'PBR','주당배당금(원)':'주당배당금','시가배당률(%)':'시가배당률','배당성향(%)':'배당성향'},inplace=True)
+    # financial_stmt.fillna(0)
+    # financial_stmt.to_excel('C:/DataDisk/naver_finance1.xlsx')
+
+    # financial_stmt.transpose()
+    # financial_stmt.rename(columns=financial_stmt.iloc[0],inplace=True)
+    # financial_stmt = financial_stmt.drop(financial_stmt.index[0])
+    # financial_stmt.to_excel('C:/DataDisk/naver_finance2.xlsx')
+
+    # for idx in range(len(financial_stmt)):
+    #     sql = "INSERT IGNORE INTO naver_finance (종목명, 종목코드, 분기, 매출액, 영업이익, 당기순이익, 영업이익률, 순이익률, ROE, 부채비율, 당좌비율,"
+    #     sql += " 유보율, EPS, PER, BPS, PBR, 주당배당금, 시가배당률, 배당성향, update_date)"
+    #     sql += " values"
+    #     sql += " (%s, %s, %s, %s, %s, %s, %s, %s,"
+    #     sql += f" %s, %s, %s, %s, %s, %s, %s, %s, '{datetime.datetime.now().strftime('%Y%m%d')}'"
+    #     sql += ")"
+
+    #     try:
+    #         cur.execute(sql) #현재의 table 삭제하고 새롭게 업데이트
+    #         connPy.commit()
+
+    #     except Exception as e:    # 모든 예외의 에러 메시지를 출력할 때는 Exception을 사용
+    #         print('예외가 발생했습니다.', e)
+
+
+
+
+
+#출처: https://xzio.tistory.com/1120 [코딩창고:티스토리]
